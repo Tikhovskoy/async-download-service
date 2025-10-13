@@ -1,3 +1,4 @@
+import argparse
 import asyncio
 import logging
 import os
@@ -6,13 +7,13 @@ from aiohttp import web
 import aiofiles
 
 
-logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 
 async def archive(request):
+    app = request.app
     archive_hash = request.match_info['archive_hash']
-    archive_path = os.path.join('test_photos', archive_hash)
+    archive_path = os.path.join(app['photos_dir'], archive_hash)
 
     if not os.path.exists(archive_path):
         raise web.HTTPNotFound(text='Архив не существует или был удален')
@@ -37,7 +38,8 @@ async def archive(request):
                 break
             logger.info('Отправляю chunk архива ...')
             await response.write(chunk)
-            await asyncio.sleep(1)
+            if app['response_delay']:
+                await asyncio.sleep(app['response_delay'])
     except asyncio.CancelledError:
         logger.info('Загрузка была прервана')
         raise
@@ -63,7 +65,37 @@ async def handle_index_page(request):
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Async file download service')
+    parser.add_argument(
+        '--logging',
+        action='store_true',
+        default=os.getenv('LOGGING', 'false').lower() in ('true', '1', 'yes'),
+        help='Enable logging (env: LOGGING)'
+    )
+    parser.add_argument(
+        '--delay',
+        type=float,
+        default=float(os.getenv('RESPONSE_DELAY', '0')),
+        help='Response delay in seconds (env: RESPONSE_DELAY)'
+    )
+    parser.add_argument(
+        '--photos-dir',
+        type=str,
+        default=os.getenv('PHOTOS_DIR', 'test_photos'),
+        help='Path to photos directory (env: PHOTOS_DIR)'
+    )
+
+    args = parser.parse_args()
+
+    if args.logging:
+        logging.basicConfig(level=logging.INFO)
+    else:
+        logging.basicConfig(level=logging.WARNING)
+
     app = web.Application()
+    app['photos_dir'] = args.photos_dir
+    app['response_delay'] = args.delay
+
     app.add_routes([
         web.get('/', handle_index_page),
         web.get('/archive/{archive_hash}/', archive),
