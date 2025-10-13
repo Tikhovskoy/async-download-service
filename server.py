@@ -1,8 +1,6 @@
 import asyncio
 import logging
 import os
-import zipfile
-from io import BytesIO
 
 from aiohttp import web
 import aiofiles
@@ -24,19 +22,17 @@ async def archive(request):
     response.headers['Content-Disposition'] = f'attachment; filename="{archive_hash}.zip"'
     await response.prepare(request)
 
-    try:
-        buffer = BytesIO()
-        with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-            for root, dirs, files in os.walk(archive_path):
-                for file in files:
-                    file_path = os.path.join(root, file)
-                    arcname = os.path.relpath(file_path, archive_path)
-                    zip_file.write(file_path, arcname)
+    process = await asyncio.create_subprocess_exec(
+        'zip', '-r', '-', '.',
+        cwd=archive_path,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
+    )
 
-        buffer.seek(0)
+    try:
         chunk_size = 65536
         while True:
-            chunk = buffer.read(chunk_size)
+            chunk = await process.stdout.read(chunk_size)
             if not chunk:
                 break
             logger.info('Отправляю chunk архива ...')
@@ -51,6 +47,11 @@ async def archive(request):
     except Exception as e:
         logger.error(f'Ошибка при создании архива: {e}')
         raise
+    finally:
+        if process.returncode is None:
+            logger.warning(f'Убиваю процесс zip с PID {process.pid}')
+            process.kill()
+            await process.communicate()
 
     return response
 
