@@ -64,7 +64,7 @@ async def handle_index_page(request):
     return web.Response(text=index_contents, content_type='text/html')
 
 
-if __name__ == '__main__':
+def main():
     parser = argparse.ArgumentParser(description='Async file download service')
     parser.add_argument(
         '--logging',
@@ -101,3 +101,7 @@ if __name__ == '__main__':
         web.get('/archive/{archive_hash}/', archive),
     ])
     web.run_app(app)
+
+
+if __name__ == '__main__':
+    main()
