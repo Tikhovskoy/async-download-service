@@ -1,10 +1,15 @@
 import asyncio
+import logging
 import os
 import zipfile
 from io import BytesIO
 
 from aiohttp import web
 import aiofiles
+
+
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 
 async def archive(request):
@@ -19,16 +24,33 @@ async def archive(request):
     response.headers['Content-Disposition'] = f'attachment; filename="{archive_hash}.zip"'
     await response.prepare(request)
 
-    buffer = BytesIO()
-    with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-        for root, dirs, files in os.walk(archive_path):
-            for file in files:
-                file_path = os.path.join(root, file)
-                arcname = os.path.relpath(file_path, archive_path)
-                zip_file.write(file_path, arcname)
+    try:
+        buffer = BytesIO()
+        with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            for root, dirs, files in os.walk(archive_path):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    arcname = os.path.relpath(file_path, archive_path)
+                    zip_file.write(file_path, arcname)
 
-    buffer.seek(0)
-    await response.write(buffer.getvalue())
+        buffer.seek(0)
+        chunk_size = 65536
+        while True:
+            chunk = buffer.read(chunk_size)
+            if not chunk:
+                break
+            logger.info('Отправляю chunk архива ...')
+            await response.write(chunk)
+            await asyncio.sleep(1)
+    except asyncio.CancelledError:
+        logger.info('Загрузка была прервана')
+        raise
+    except ConnectionResetError:
+        logger.info('Клиент отключился')
+        raise
+    except Exception as e:
+        logger.error(f'Ошибка при создании архива: {e}')
+        raise
 
     return response
 
