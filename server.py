@@ -5,6 +5,7 @@ import os
 
 from aiohttp import web
 import aiofiles
+from dotenv import load_dotenv
 
 
 logger = logging.getLogger(__name__)
@@ -31,7 +32,7 @@ async def archive(request):
     )
 
     try:
-        chunk_size = 65536
+        chunk_size = app['chunk_size']
         while True:
             chunk = await process.stdout.read(chunk_size)
             if not chunk:
@@ -59,12 +60,13 @@ async def archive(request):
 
 
 async def handle_index_page(request):
-    async with aiofiles.open('index.html', mode='r') as index_file:
+    async with aiofiles.open(request.app['index_file'], mode='r') as index_file:
         index_contents = await index_file.read()
     return web.Response(text=index_contents, content_type='text/html')
 
 
 def main():
+    load_dotenv()
     parser = argparse.ArgumentParser(description='Async file download service')
     parser.add_argument(
         '--logging',
@@ -84,6 +86,24 @@ def main():
         default=os.getenv('PHOTOS_DIR', 'test_photos'),
         help='Path to photos directory (env: PHOTOS_DIR)'
     )
+    parser.add_argument(
+        '--port',
+        type=int,
+        default=int(os.getenv('PORT', '8080')),
+        help='Port to run the web server on (env: PORT)'
+    )
+    parser.add_argument(
+        '--chunk-size',
+        type=int,
+        default=int(os.getenv('CHUNK_SIZE', '65536')),
+        help='Chunk size for streaming archives (env: CHUNK_SIZE)'
+    )
+    parser.add_argument(
+        '--index-file',
+        type=str,
+        default=os.getenv('INDEX_FILE', 'index.html'),
+        help='Path to the index HTML file (env: INDEX_FILE)'
+    )
 
     args = parser.parse_args()
 
@@ -95,12 +115,14 @@ def main():
     app = web.Application()
     app['photos_dir'] = args.photos_dir
     app['response_delay'] = args.delay
+    app['chunk_size'] = args.chunk_size
+    app['index_file'] = args.index_file
 
     app.add_routes([
         web.get('/', handle_index_page),
         web.get('/archive/{archive_hash}/', archive),
     ])
-    web.run_app(app)
+    web.run_app(app, port=args.port)
 
 
 if __name__ == '__main__':
